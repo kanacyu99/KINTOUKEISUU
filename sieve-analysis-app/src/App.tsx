@@ -214,6 +214,31 @@ function App() {
     link.click();
   };
 
+  const chartData = useMemo(() => {
+    const processedData = sieveData
+      .map(row => {
+        const newRow: { [key: string]: any } = { sieveSize: row.sieveSize };
+        cases.forEach(caseName => {
+          const valueStr = row[caseName] as string;
+          if (valueStr === null || valueStr.trim() === '' || isNaN(parseFloat(valueStr))) {
+            newRow[caseName] = null;
+          } else {
+            let value = parseFloat(valueStr);
+            if (value < 0) value = 0;
+            if (value > 100) value = 100;
+            newRow[caseName] = value;
+          }
+        });
+        return newRow;
+      })
+      .filter(row => row.sieveSize > 0);
+
+    // Sort by sieveSize in descending order to ensure the line is drawn correctly
+    processedData.sort((a, b) => b.sieveSize - a.sieveSize);
+
+    return processedData;
+  }, [sieveData, cases]);
+
   return (
     <div className="App">
       <h1>粒度試験分析 (Sieve Analysis)</h1>
@@ -287,14 +312,14 @@ function App() {
       <h2>粒度曲線グラフ</h2>
       <div className="chart-container">
         <ResponsiveContainer width="100%" height={500}>
-          <LineChart data={sieveData.filter(d => d.sieveSize > 0).sort((a,b) => b.sieveSize - a.sieveSize)}>
+          <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="sieveSize" type="number" scale="log" domain={['auto', 'auto']} reversed={true} label={{ value: "粒径 (mm) [対数スケール]", position: 'insideBottom', offset: -15 }} tickFormatter={(tick) => tick.toString()} allowDuplicatedCategory={false}/>
             <YAxis label={{ value: "通過百分率 (%)", angle: -90, position: 'insideLeft' }} domain={[0, 100]} ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}/>
             <Tooltip formatter={(value: any) => `${Number(value).toFixed(2)}%`} labelFormatter={(label) => `粒径: ${label} mm`}/>
             <Legend onClick={handleLegendClick} />
             {cases.map((caseName, index) => (
-              <Line key={caseName} type="monotone" dataKey={caseName} stroke={visibleCases[caseName] ? chartColors[index % chartColors.length] : 'transparent'} connectNulls strokeWidth={2} dot={{ r: 3 }}/>
+              <Line key={caseName} type="monotone" dataKey={caseName} stroke={visibleCases[caseName] ? chartColors[index % chartColors.length] : 'transparent'} strokeWidth={2} dot={{ r: 3 }}/>
             ))}
           </LineChart>
         </ResponsiveContainer>

@@ -2,10 +2,9 @@
 > sieve-analysis-app@0.0.0 dev
 > vite
 
+Port 5173 is in use, trying another one...
 
-  VITE v7.3.0  ready in 296 ms
+  VITE v7.3.0  ready in 852 ms
 
-  ➜  Local:   http://localhost:5173/
+  ➜  Local:   http://localhost:5174/
   ➜  Network: use --host to expose
-6:58:46 AM [vite] (client) hmr update /src/styles.css
-6:59:51 AM [vite] (client) hmr update /src/App.tsx
