@@ -117,18 +117,19 @@ function App() {
     const newData = [...sieveData];
     const newSize = parseFloat(value);
     newData[rowIndex].sieveSize = isNaN(newSize) ? 0 : newSize;
-    newData.sort((a, b) => b.sieveSize - a.sieveSize);
+    newData.sort((a, b) => a.sieveSize - b.sieveSize); // Sort ascending for small -> large axis
     setSieveData(newData);
     validateData(newData);
   };
 
   const validateData = (data: SieveData[]) => {
     const messages: ValidationMessage[] = [];
-    const sortedData = [...data].sort((a, b) => b.sieveSize - a.sieveSize);
+    // Sort by sieve size descending for validation logic (largest sieve first)
+    const sortedForValidation = [...data].sort((a, b) => b.sieveSize - a.sieveSize);
 
     cases.forEach(caseName => {
       let lastValue: number | null = null;
-      sortedData.forEach(row => {
+      sortedForValidation.forEach(row => {
         const originalRowIndex = data.findIndex(d => d.sieveSize === row.sieveSize);
         const valueStr = row[caseName] as string;
         if (!valueStr || valueStr.trim() === '') {
@@ -224,6 +225,14 @@ function App() {
       return { caseName, D10, D30, D60, Cu, Cc };
     });
     setResults(newResults);
+    // Reset selected case if it becomes invalid
+    const currentPlottableCases = cases.filter(caseName => {
+      const validPoints = sieveData.filter(row => !isNaN(parseFloat(row[caseName] as string)));
+      return validPoints.length >= 2;
+    });
+    if (!currentPlottableCases.includes(selectedCaseForDValues)) {
+      setSelectedCaseForDValues('');
+    }
   };
 
   const handleAddCase = () => {
@@ -236,6 +245,9 @@ function App() {
   const handleRemoveCase = () => {
     if (cases.length <= 1) return;
     const lastCaseName = cases.pop()!;
+    if (selectedCaseForDValues === lastCaseName) {
+      setSelectedCaseForDValues('');
+    }
     setCases([...cases]);
     setSieveData(sieveData.map(row => {
       const newRow = {...row};
@@ -296,16 +308,24 @@ function App() {
       })
       .filter(row => row.sieveSize > 0);
 
-    processedData.sort((a, b) => b.sieveSize - a.sieveSize);
+    // Sort by sieveSize in ascending order for a standard left-to-right axis
+    processedData.sort((a, b) => a.sieveSize - b.sieveSize);
 
     return processedData;
   }, [sieveData, cases]);
+
+  const dValueCases = useMemo(() => {
+    return results.filter(r =>
+      typeof r.D10 === 'number' &&
+      typeof r.D30 === 'number' &&
+      typeof r.D60 === 'number'
+    ).map(r => r.caseName);
+  }, [results]);
+
   const selectedCaseResult = useMemo(() => {
     if (!selectedCaseForDValues) return null;
     return results.find(r => r.caseName === selectedCaseForDValues) || null;
   }, [selectedCaseForDValues, results]);
-
-
   return (
     <div className="App">
       <h1>粒度試験分析 (Sieve Analysis)</h1>
@@ -316,16 +336,16 @@ function App() {
         <button onClick={handleRemoveCase} disabled={cases.length <= 1}>ケース列を削除</button>
         <label><input type="checkbox" checked={showCc} onChange={() => setShowCc(!showCc)} /> 曲率係数 (Cc) を表示</label>
       </div>
-       <div className="controls">
-        <label htmlFor="d-value-case-selector">D値表示ケース選択:</label>
+      <div className="controls">
+        <label htmlFor="d-value-case-selector">D値縦線表示ケース:</label>
         <select
           id="d-value-case-selector"
           value={selectedCaseForDValues}
           onChange={(e) => setSelectedCaseForDValues(e.target.value)}
-          disabled={plottableCases.length === 0}
+          disabled={dValueCases.length === 0}
         >
-          <option value="">-- 選択してください --</option>
-          {plottableCases.map(caseName => (
+          <option value="">-- 選択 --</option>
+          {dValueCases.map(caseName => (
             <option key={caseName} value={caseName}>{caseName}</option>
           ))}
         </select>
@@ -399,7 +419,7 @@ function App() {
               dataKey="logSieveSize"
               type="number"
               domain={['dataMin', 'dataMax']}
-              reversed={true}
+              reversed={false}
               label={{ value: "粒径 (mm) [対数スケール]", position: 'insideBottom', offset: -15 }}
               tickFormatter={(tick) => String(parseFloat(Math.pow(10, tick).toPrecision(2)))}
               allowDuplicatedCategory={false}
@@ -422,25 +442,13 @@ function App() {
               );
             })}
             {selectedCaseResult && typeof selectedCaseResult.D10 === 'number' && (
-              <ReferenceLine x={Math.log10(selectedCaseResult.D10)} stroke="grey" strokeDasharray="3 3">
-                 <text x={Math.log10(selectedCaseResult.D10)} y={20} fill="grey" textAnchor="middle">
-                   D10={selectedCaseResult.D10.toFixed(3)}mm
-                 </text>
-              </ReferenceLine>
+              <ReferenceLine x={Math.log10(selectedCaseResult.D10)} stroke="grey" strokeDasharray="3 3" label={{ value: `D10=${selectedCaseResult.D10.toFixed(3)}mm`, position: 'insideTopLeft' }}/>
             )}
             {selectedCaseResult && typeof selectedCaseResult.D30 === 'number' && (
-              <ReferenceLine x={Math.log10(selectedCaseResult.D30)} stroke="grey" strokeDasharray="3 3">
-                <text x={Math.log10(selectedCaseResult.D30)} y={20} fill="grey" textAnchor="middle">
-                   D30={selectedCaseResult.D30.toFixed(3)}mm
-                 </text>
-              </ReferenceLine>
+              <ReferenceLine x={Math.log10(selectedCaseResult.D30)} stroke="grey" strokeDasharray="3 3" label={{ value: `D30=${selectedCaseResult.D30.toFixed(3)}mm`, position: 'insideTopLeft' }}/>
             )}
             {selectedCaseResult && typeof selectedCaseResult.D60 === 'number' && (
-              <ReferenceLine x={Math.log10(selectedCaseResult.D60)} stroke="grey" strokeDasharray="3 3">
-                <text x={Math.log10(selectedCaseResult.D60)} y={20} fill="grey" textAnchor="middle">
-                   D60={selectedCaseResult.D60.toFixed(3)}mm
-                 </text>
-              </ReferenceLine>
+              <ReferenceLine x={Math.log10(selectedCaseResult.D60)} stroke="grey" strokeDasharray="3 3" label={{ value: `D60=${selectedCaseResult.D60.toFixed(3)}mm`, position: 'insideTopLeft' }}/>
             )}
           </LineChart>
         </ResponsiveContainer>

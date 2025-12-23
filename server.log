@@ -2,8 +2,9 @@
 > sieve-analysis-app@0.0.0 dev
 > vite --port 3000
 
+Port 3000 is in use, trying another one...
 
-  VITE v7.3.0  ready in 262 ms
+  VITE v7.3.0  ready in 250 ms
 
-  ➜  Local:   http://localhost:3000/
+  ➜  Local:   http://localhost:3001/
   ➜  Network: use --host to expose
