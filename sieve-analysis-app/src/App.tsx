@@ -2,14 +2,14 @@ import { useMemo, useState } from 'react';
 import Papa from 'papaparse';
 import type { LegendPayload } from 'recharts';
 import {
-  CartesianGrid,
-  Legend,
-  Line,
   LineChart,
-  ResponsiveContainer,
-  Tooltip,
+  Line,
   XAxis,
   YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
 
@@ -41,6 +41,7 @@ interface CustomTooltipPayload {
   value: number;
   dataKey?: string;
   color?: string;
+  payload?: object;
 }
 
 interface CustomTooltipProps {
@@ -49,12 +50,19 @@ interface CustomTooltipProps {
   label?: number | string;
 }
 
+// ====== Settings you asked for ======
+const X_MIN_MM = 0.075;
+const X_MAX_MM = 106;
+
+// Excelみたいな目盛り感（必要なら増減OK）
+const AXIS_SIEVE_TICKS_MM = [
+  0.075, 0.15, 0.425, 0.6, 1.18, 2.36, 4.75, 9.5, 13.2, 16, 19, 26.5, 31.5, 37.5, 53, 63, 75, 106,
+];
+
 // Custom Tooltip Component
 const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (active && payload && payload.length && typeof label === 'number') {
-    // label is log10(sieveSize)
     const originalSieveSize = Math.pow(10, label);
-
     return (
       <div className="custom-tooltip">
         <p className="label">{`粒径: ${originalSieveSize.toFixed(3)} mm`}</p>
@@ -84,26 +92,10 @@ const initialSieveData: SieveData[] = initialSieveSizes.map((size) => ({
 }));
 
 const chartColors = [
-  '#e6194B',
-  '#3cb44b',
-  '#ffe119',
-  '#4363d8',
-  '#f58231',
-  '#911eb4',
-  '#46f0f0',
-  '#f032e6',
-  '#bcf60c',
-  '#fabebe',
-  '#008080',
-  '#e6beff',
-  '#9A6324',
-  '#fffac8',
-  '#800000',
-  '#aaffc3',
-  '#808080',
-  '#ffd8b1',
-  '#000075',
-  '#a9a9a9',
+  '#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4',
+  '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff',
+  '#9A6324', '#fffac8', '#800000', '#aaffc3', '#808080', '#ffd8b1',
+  '#000075', '#a9a9a9',
 ];
 
 function App() {
@@ -113,12 +105,12 @@ function App() {
   const [validationMessages, setValidationMessages] = useState<ValidationMessage[]>([]);
   const [showCc, setShowCc] = useState<boolean>(true);
 
-  // 参照線（D10/D30/D60）をどのケースで表示するか：とりあえず Case 1
-  const [dLineCase, setDLineCase] = useState<string>(initialCases[0]);
-
   const [visibleCases, setVisibleCases] = useState<Record<string, boolean>>(
     initialCases.reduce((acc, caseName) => ({ ...acc, [caseName]: true }), {})
   );
+
+  // ★ D-lines 表示対象ケース（まずはCase 1）
+  const [dLineCase, setDLineCase] = useState<string>(initialCases[0]);
 
   const handleLegendClick = (e: LegendPayload) => {
     const key = e.dataKey;
@@ -138,7 +130,6 @@ function App() {
     const newData = [...sieveData];
     const newSize = parseFloat(value);
     newData[rowIndex].sieveSize = isNaN(newSize) ? 0 : newSize;
-    // 表は大きい順で見やすいので降順
     newData.sort((a, b) => b.sieveSize - a.sieveSize);
     setSieveData(newData);
     validateData(newData);
@@ -158,10 +149,10 @@ function App() {
 
         const value = parseFloat(valueStr);
         if (isNaN(value) || value < 0 || value > 100) {
-          messages.push({ rowIndex: originalRowIndex, caseName, message: `0-100の値を入力`, type: 'error' });
+          messages.push({ rowIndex: originalRowIndex, caseName, message: '0-100の値を入力', type: 'error' });
         } else {
           if (lastValue !== null && value > lastValue) {
-            messages.push({ rowIndex: originalRowIndex, caseName, message: `単調減少違反`, type: 'warning' });
+            messages.push({ rowIndex: originalRowIndex, caseName, message: '単調減少違反', type: 'warning' });
           }
           lastValue = value;
         }
@@ -172,7 +163,10 @@ function App() {
     return !messages.some((msg) => msg.type === 'error');
   };
 
-  const getDValue = (data: { passing: number; sieveSize: number }[], targetPercentage: number): number | string => {
+  const getDValue = (
+    data: { passing: number; sieveSize: number }[],
+    targetPercentage: number
+  ): number | string => {
     const sortedBySize = [...data].sort((a, b) => b.sieveSize - a.sieveSize);
     const sortedByPassing = [...sortedBySize].sort((a, b) => a.passing - b.passing);
 
@@ -180,7 +174,9 @@ function App() {
 
     const minPassing = sortedByPassing[0].passing;
     const maxPassing = sortedByPassing[sortedByPassing.length - 1].passing;
-    if (targetPercentage < minPassing || targetPercentage > maxPassing) return '範囲外';
+    if (targetPercentage < minPassing || targetPercentage > maxPassing) {
+      return '範囲外';
+    }
 
     let p1: { passing: number; sieveSize: number } | null = null;
     let p2: { passing: number; sieveSize: number } | null = null;
@@ -251,8 +247,8 @@ function App() {
 
   const handleRemoveCase = () => {
     if (cases.length <= 1) return;
-    const lastCaseName = cases[cases.length - 1];
-    const newCases = cases.slice(0, -1);
+    const newCases = [...cases];
+    const lastCaseName = newCases.pop()!;
     setCases(newCases);
 
     setSieveData(
@@ -267,7 +263,7 @@ function App() {
     delete newVisibleCases[lastCaseName];
     setVisibleCases(newVisibleCases);
 
-    if (dLineCase === lastCaseName) setDLineCase(newCases[0]);
+    if (dLineCase === lastCaseName) setDLineCase(newCases[0] ?? 'Case 1');
   };
 
   const handleDownloadCsv = () => {
@@ -302,7 +298,6 @@ function App() {
     });
   }, [sieveData, cases]);
 
-  // ✅ グラフ用データ：粒径を「昇順」にソート（ここが軸反転の肝）
   const chartData = useMemo(() => {
     const processedData = sieveData
       .map((row) => {
@@ -325,25 +320,47 @@ function App() {
       })
       .filter((row) => row.sieveSize > 0);
 
-    // ✅ 昇順（小→大）にする
+    // xは「小→大」で右に行く（あなたの完成図と同じ）
     processedData.sort((a, b) => a.sieveSize - b.sieveSize);
-
     return processedData;
   }, [sieveData, cases]);
 
-  const dLineResult = results.find((r) => r.caseName === dLineCase);
-  const d10 = typeof dLineResult?.D10 === 'number' ? dLineResult!.D10 : null;
-  const d30 = typeof dLineResult?.D30 === 'number' ? dLineResult!.D30 : null;
-  const d60 = typeof dLineResult?.D60 === 'number' ? dLineResult!.D60 : null;
+  // X軸（対数）固定：0.075～106
+  const xDomain = useMemo<[number, number]>(() => {
+    return [Math.log10(X_MIN_MM), Math.log10(X_MAX_MM)];
+  }, []);
 
-  const fmtTickMm = (tick: number) => {
-    const mm = Math.pow(10, tick);
-    // 見た目がゴチャつくのでいい感じに丸める
-    if (mm >= 10) return String(Number(mm.toFixed(0)));
-    if (mm >= 1) return String(Number(mm.toFixed(2)));
-    if (mm >= 0.1) return String(Number(mm.toFixed(3)));
-    return String(Number(mm.toFixed(3)));
-  };
+  const xTicks = useMemo(() => {
+    return AXIS_SIEVE_TICKS_MM.map((mm) => Math.log10(mm));
+  }, []);
+
+  // D-lines 用（選択ケースの結果から取得）
+  const dLineResult = useMemo(() => {
+    return results.find((r) => r.caseName === dLineCase) ?? null;
+  }, [results, dLineCase]);
+
+  const dLines = useMemo(() => {
+    if (!dLineResult) return [];
+
+    const items: { label: string; mm: number }[] = [];
+
+    const addIfNumber = (label: string, v: number | string) => {
+      if (typeof v === 'number' && v > 0) items.push({ label, mm: v });
+    };
+
+    addIfNumber('D10', dLineResult.D10);
+    addIfNumber('D30', dLineResult.D30);
+    addIfNumber('D60', dLineResult.D60);
+
+    // D-linesは見やすい順に右→左になりがちなので、粒径でソートしておく
+    items.sort((a, b) => a.mm - b.mm);
+
+    return items.map((it) => ({
+      ...it,
+      x: Math.log10(it.mm),
+      text: `${it.label} = ${it.mm.toFixed(3)} mm`,
+    }));
+  }, [dLineResult]);
 
   return (
     <div className="App">
@@ -356,20 +373,26 @@ function App() {
         <button onClick={handleRemoveCase} disabled={cases.length <= 1}>
           ケース列を削除
         </button>
+
         <label style={{ marginLeft: 12 }}>
           <input type="checkbox" checked={showCc} onChange={() => setShowCc(!showCc)} /> 曲率係数 (Cc) を表示
         </label>
 
-        <span style={{ marginLeft: 16 }}>
-          D線表示ケース：
-          <select value={dLineCase} onChange={(e) => setDLineCase(e.target.value)} style={{ marginLeft: 8 }}>
+        {/* ★ D-lines 表示ケース */}
+        <label style={{ marginLeft: 12 }}>
+          D10/D30/D60 表示ケース：
+          <select
+            value={dLineCase}
+            onChange={(e) => setDLineCase(e.target.value)}
+            style={{ marginLeft: 8 }}
+          >
             {cases.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
             ))}
           </select>
-        </span>
+        </label>
       </div>
 
       <h2>入力データ (通過百分率 %)</h2>
@@ -449,18 +472,24 @@ function App() {
 
       <h2>粒度曲線グラフ</h2>
       <div className="chart-container">
-        <ResponsiveContainer width="100%" height={500}>
+        <ResponsiveContainer width="100%" height={520}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" />
 
             <XAxis
               dataKey="logSieveSize"
               type="number"
-              domain={['dataMin', 'dataMax']}
-              // ✅ reversed をやめる（ここが軸反対を直す）
-              // reversed={true}
+              domain={xDomain}
+              ticks={xTicks}
+              reversed={false}
               label={{ value: '粒径 (mm) [対数スケール]', position: 'insideBottom', offset: -15 }}
-              tickFormatter={fmtTickMm}
+              tickFormatter={(tick) => {
+                const mm = Math.pow(10, tick);
+                // 目盛りが多いので、見やすく丸め
+                if (mm >= 10) return String(Math.round(mm * 10) / 10);
+                if (mm >= 1) return String(Math.round(mm * 100) / 100);
+                return String(Math.round(mm * 1000) / 1000);
+              }}
               allowDuplicatedCategory={false}
             />
 
@@ -473,43 +502,35 @@ function App() {
             <Tooltip content={<CustomTooltip />} />
             <Legend onClick={handleLegendClick} />
 
-            {/* D-lines */}
-            {d60 !== null && (
+            {/* ★ D10/D30/D60 縦線 */}
+            {dLines.map((dl) => (
               <ReferenceLine
-                x={Math.log10(d60)}
-                stroke="#666"
+                key={dl.label}
+                x={dl.x}
+                stroke="#777"
                 strokeDasharray="4 4"
-                label={{ value: 'D60', position: 'insideTop', fill: '#666' }}
+                label={{
+                  value: dl.text,
+                  position: 'insideTop',
+                  fill: '#777',
+                  fontSize: 12,
+                }}
               />
-            )}
-            {d30 !== null && (
-              <ReferenceLine
-                x={Math.log10(d30)}
-                stroke="#666"
-                strokeDasharray="4 4"
-                label={{ value: 'D30', position: 'insideTop', fill: '#666' }}
-              />
-            )}
-            {d10 !== null && (
-              <ReferenceLine
-                x={Math.log10(d10)}
-                stroke="#666"
-                strokeDasharray="4 4"
-                label={{ value: 'D10', position: 'insideTop', fill: '#666' }}
-              />
-            )}
+            ))}
 
+            {/* ★ プロットは「直線」でつなぐ */}
             {plottableCases.map((caseName) => {
               const caseIndex = cases.findIndex((c) => c === caseName);
               return (
                 <Line
                   key={caseName}
-                  type="monotone"
+                  type="linear"
                   dataKey={caseName}
                   stroke={visibleCases[caseName] ? chartColors[caseIndex % chartColors.length] : 'transparent'}
                   strokeWidth={2}
                   dot={{ r: 3 }}
                   connectNulls={false}
+                  isAnimationActive={false}
                 />
               );
             })}
