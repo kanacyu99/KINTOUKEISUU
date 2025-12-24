@@ -2,23 +2,26 @@ import { useMemo, useState } from 'react';
 import Papa from 'papaparse';
 import type { LegendPayload } from 'recharts';
 import {
-  CartesianGrid,
-  Legend,
-  Line,
   LineChart,
-  ResponsiveContainer,
-  Tooltip,
+  Line,
   XAxis,
   YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  ReferenceLine,
 } from 'recharts';
 
-// -------------------- Types --------------------
-type SieveRow = {
-  sieveSize: number; // mm
-  [caseName: string]: number | string;
+// --------------------
+// Types
+// --------------------
+type SieveData = {
+  sieveSize: number;
+  [key: string]: number | string;
 };
 
-type ResultRow = {
+type ResultData = {
   caseName: string;
   D10: number | string;
   D30: number | string;
@@ -34,128 +37,106 @@ type ValidationMessage = {
   type: 'error' | 'warning';
 };
 
-// -------------------- Initial data --------------------
-const initialSieveSizes: number[] = [53, 37.5, 31.5, 26.5, 19, 13.2, 4.75, 2.36, 0.425, 0.075];
-const initialCases: string[] = Array.from({ length: 12 }, (_, i) => `Case ${i + 1}`);
-
-const initialSieveData: SieveRow[] = initialSieveSizes.map((size) => ({
-  sieveSize: size,
-  ...initialCases.reduce((acc, c) => ({ ...acc, [c]: '' }), {}),
-}));
-
-const chartColors = [
-  '#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4',
-  '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff',
-  '#9A6324', '#fffac8', '#800000', '#aaffc3', '#808080', '#ffd8b1',
-  '#000075', '#a9a9a9',
-];
-
-// -------------------- Tooltip --------------------
-type CustomTooltipPayload = {
+interface CustomTooltipPayload {
+  name: string;
+  value: number;
   dataKey?: string;
-  value?: number;
   color?: string;
-};
+}
 
-type CustomTooltipProps = {
+interface CustomTooltipProps {
   active?: boolean;
   payload?: CustomTooltipPayload[];
-  label?: number; // sieveSize
-};
+  label?: number | string;
+}
 
+// --------------------
+// Tooltip (log軸でも sieveSize をそのまま表示)
+// --------------------
 const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
-  if (!active || !payload || payload.length === 0 || typeof label !== 'number') return null;
+  if (!active || !payload || !payload.length || typeof label !== 'number') return null;
 
   return (
-    <div className="custom-tooltip" style={{ background: '#fff', border: '1px solid #ccc', padding: 10 }}>
-      <p className="label">{`粒径: ${label} mm`}</p>
+    <div className="custom-tooltip">
+      <p className="label">{`粒径: ${formatMm(label)} mm`}</p>
       {payload.map((pld) => {
-        if (!pld.dataKey) return null;
-        const v = pld.value;
-        if (v === null || v === undefined || Number.isNaN(Number(v))) return null;
-        return (
-          <p key={pld.dataKey} style={{ color: pld.color }}>
-            {`${pld.dataKey}: ${Number(v).toFixed(2)}%`}
-          </p>
-        );
+        if (pld.value !== null && pld.value !== undefined && pld.dataKey) {
+          return (
+            <p key={pld.dataKey} style={{ color: pld.color }}>
+              {`${pld.dataKey}: ${Number(pld.value).toFixed(2)}%`}
+            </p>
+          );
+        }
+        return null;
       })}
     </div>
   );
 };
 
+// --------------------
+// Initial data
+// --------------------
+const initialSieveSizes: number[] = [53, 37.5, 31.5, 26.5, 19, 13.2, 4.75, 2.36, 0.425, 0.075];
+const initialCases: string[] = Array.from({ length: 12 }, (_, i) => `Case ${i + 1}`);
+
+const initialSieveData: SieveData[] = initialSieveSizes.map((size) => ({
+  sieveSize: size,
+  ...initialCases.reduce((acc, caseName) => ({ ...acc, [caseName]: '' }), {}),
+}));
+
+const chartColors = [
+  '#e6194B',
+  '#3cb44b',
+  '#ffe119',
+  '#4363d8',
+  '#f58231',
+  '#911eb4',
+  '#46f0f0',
+  '#f032e6',
+  '#bcf60c',
+  '#fabebe',
+  '#008080',
+  '#e6beff',
+  '#9A6324',
+  '#fffac8',
+  '#800000',
+  '#aaffc3',
+  '#808080',
+  '#ffd8b1',
+  '#000075',
+  '#a9a9a9',
+];
+
+// --------------------
+// Helpers
+// --------------------
+function formatMm(v: number) {
+  if (!isFinite(v)) return '';
+  // 0.075 など小さい値が崩れないように
+  if (v >= 10) return v.toFixed(0);
+  if (v >= 1) return v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function isNumber(x: unknown): x is number {
+  return typeof x === 'number' && isFinite(x);
+}
+
 function App() {
-  const [sieveData, setSieveData] = useState<SieveRow[]>(initialSieveData);
+  const [sieveData, setSieveData] = useState<SieveData[]>(initialSieveData);
   const [cases, setCases] = useState<string[]>(initialCases);
-  const [results, setResults] = useState<ResultRow[]>([]);
+  const [results, setResults] = useState<ResultData[]>([]);
   const [validationMessages, setValidationMessages] = useState<ValidationMessage[]>([]);
   const [showCc, setShowCc] = useState<boolean>(true);
+
+  // 凡例で表示/非表示
   const [visibleCases, setVisibleCases] = useState<Record<string, boolean>>(
-    initialCases.reduce((acc, c) => ({ ...acc, [c]: true }), {} as Record<string, boolean>)
+    initialCases.reduce((acc, caseName) => ({ ...acc, [caseName]: true }), {})
   );
 
-  // -------- Validation --------
-  const validateData = (data: SieveRow[]) => {
-    const messages: ValidationMessage[] = [];
-    const sorted = [...data].filter(r => r.sieveSize > 0).sort((a, b) => b.sieveSize - a.sieveSize);
+  // D10/D30/D60 の縦線を出す対象ケース
+  const [refCase, setRefCase] = useState<string>(initialCases[0]);
 
-    cases.forEach((caseName) => {
-      let last: number | null = null;
-      sorted.forEach((row) => {
-        const rowIndex = data.findIndex((d) => d.sieveSize === row.sieveSize);
-        const valueStr = row[caseName] as string;
-
-        if (!valueStr || valueStr.trim() === '') return;
-
-        const v = parseFloat(valueStr);
-        if (Number.isNaN(v) || v < 0 || v > 100) {
-          messages.push({ rowIndex, caseName, message: '0-100の値を入力', type: 'error' });
-          return;
-        }
-
-        if (last !== null && v > last) {
-          messages.push({ rowIndex, caseName, message: '単調減少違反', type: 'warning' });
-        }
-        last = v;
-      });
-    });
-
-    setValidationMessages(messages);
-    return !messages.some((m) => m.type === 'error');
-  };
-
-  // -------- D-value (log-linear interpolation) --------
-  const getDValue = (data: { passing: number; sieveSize: number }[], target: number): number | string => {
-    const valid = [...data].filter(d => d.sieveSize > 0 && !Number.isNaN(d.passing));
-    if (valid.length < 2) return 'データ不足';
-
-    // sort by passing asc (0->100)
-    const byPassing = [...valid].sort((a, b) => a.passing - b.passing);
-
-    const minP = byPassing[0].passing;
-    const maxP = byPassing[byPassing.length - 1].passing;
-    if (target < minP || target > maxP) return '範囲外';
-
-    let p1: { passing: number; sieveSize: number } | null = null;
-    let p2: { passing: number; sieveSize: number } | null = null;
-
-    for (let i = 0; i < byPassing.length; i++) {
-      if (byPassing[i].passing <= target) p1 = byPassing[i];
-      if (byPassing[i].passing >= target && p2 === null) p2 = byPassing[i];
-    }
-
-    if (!p1 || !p2) return '計算不可';
-    if (p1.passing === target) return p1.sieveSize;
-    if (p2.passing === target) return p2.sieveSize;
-    if (p1 === p2) return '計算不可';
-    if (p2.passing === p1.passing) return p1.sieveSize;
-
-    const logD1 = Math.log10(p1.sieveSize);
-    const logD2 = Math.log10(p2.sieveSize);
-    const logD = logD1 + (logD2 - logD1) * (target - p1.passing) / (p2.passing - p1.passing);
-    return Math.pow(10, logD);
-  };
-
-  // -------- Handlers --------
   const handleLegendClick = (e: LegendPayload) => {
     const key = e.dataKey;
     if (typeof key === 'string') {
@@ -164,34 +145,95 @@ function App() {
   };
 
   const handleInputChange = (rowIndex: number, caseName: string, value: string) => {
-    const next = [...sieveData];
-    next[rowIndex] = { ...next[rowIndex], [caseName]: value };
-    setSieveData(next);
-    validateData(next);
+    const newData = [...sieveData];
+    newData[rowIndex] = { ...newData[rowIndex], [caseName]: value };
+    setSieveData(newData);
+    validateData(newData);
   };
 
   const handleSieveSizeChange = (rowIndex: number, value: string) => {
-    const next = [...sieveData];
+    const newData = [...sieveData];
     const newSize = parseFloat(value);
-    next[rowIndex] = { ...next[rowIndex], sieveSize: Number.isNaN(newSize) ? 0 : newSize };
-    next.sort((a, b) => b.sieveSize - a.sieveSize);
-    setSieveData(next);
-    validateData(next);
+    newData[rowIndex].sieveSize = isNaN(newSize) ? 0 : newSize;
+    newData.sort((a, b) => b.sieveSize - a.sieveSize);
+    setSieveData(newData);
+    validateData(newData);
+  };
+
+  const validateData = (data: SieveData[]) => {
+    const messages: ValidationMessage[] = [];
+    const sortedData = [...data].sort((a, b) => b.sieveSize - a.sieveSize);
+
+    cases.forEach((caseName) => {
+      let lastValue: number | null = null;
+      sortedData.forEach((row) => {
+        const originalRowIndex = data.findIndex((d) => d.sieveSize === row.sieveSize);
+        const valueStr = row[caseName] as string;
+
+        if (!valueStr || valueStr.trim() === '') return;
+
+        const value = parseFloat(valueStr);
+        if (isNaN(value) || value < 0 || value > 100) {
+          messages.push({ rowIndex: originalRowIndex, caseName, message: `0-100の値を入力`, type: 'error' });
+        } else {
+          if (lastValue !== null && value > lastValue) {
+            messages.push({ rowIndex: originalRowIndex, caseName, message: `単調減少違反`, type: 'warning' });
+          }
+          lastValue = value;
+        }
+      });
+    });
+
+    setValidationMessages(messages);
+    return !messages.some((msg) => msg.type === 'error');
+  };
+
+  // 対数補間で D値算出
+  const getDValue = (data: { passing: number; sieveSize: number }[], targetPercentage: number): number | string => {
+    const sortedBySize = [...data].sort((a, b) => b.sieveSize - a.sieveSize);
+    const sortedByPassing = [...sortedBySize].sort((a, b) => a.passing - b.passing);
+
+    if (sortedByPassing.length < 2) return 'データ不足';
+
+    const minPassing = sortedByPassing[0].passing;
+    const maxPassing = sortedByPassing[sortedByPassing.length - 1].passing;
+    if (targetPercentage < minPassing || targetPercentage > maxPassing) return '範囲外';
+
+    let p1: { passing: number; sieveSize: number } | null = null;
+    let p2: { passing: number; sieveSize: number } | null = null;
+
+    for (let i = 0; i < sortedByPassing.length; i++) {
+      if (sortedByPassing[i].passing <= targetPercentage) p1 = sortedByPassing[i];
+      if (sortedByPassing[i].passing >= targetPercentage && p2 === null) p2 = sortedByPassing[i];
+    }
+
+    if (p1 && p1.passing === targetPercentage) return p1.sieveSize;
+    if (p2 && p2.passing === targetPercentage) return p2.sieveSize;
+    if (!p1 || !p2 || p1 === p2) return '計算不可';
+
+    const logD1 = Math.log10(p1.sieveSize);
+    const logD2 = Math.log10(p2.sieveSize);
+    if (p2.passing === p1.passing) return p1.sieveSize;
+
+    const logD =
+      logD1 + ((logD2 - logD1) * (targetPercentage - p1.passing)) / (p2.passing - p1.passing);
+
+    return Math.pow(10, logD);
   };
 
   const handleCalculate = () => {
     if (!validateData(sieveData)) {
-      alert('入力エラーがあります。計算前に修正してください。');
+      alert('入力エラーがあります。計算を実行する前に修正してください。');
       return;
     }
 
-    const newResults: ResultRow[] = cases.map((caseName) => {
+    const newResults: ResultData[] = cases.map((caseName) => {
       const validData = sieveData
         .map((row) => ({
           sieveSize: row.sieveSize,
           passing: parseFloat(row[caseName] as string),
         }))
-        .filter((d) => d.sieveSize > 0 && !Number.isNaN(d.passing));
+        .filter((item) => !isNaN(item.passing) && item.sieveSize > 0);
 
       if (validData.length < 2) {
         return { caseName, D10: 'N/A', D30: 'N/A', D60: 'N/A', Cu: 'N/A', Cc: 'N/A' };
@@ -206,7 +248,9 @@ function App() {
 
       if (typeof D10 === 'number' && typeof D60 === 'number' && D10 > 0) {
         Cu = D60 / D10;
-        if (typeof D30 === 'number') Cc = (D30 * D30) / (D10 * D60);
+        if (typeof D30 === 'number') {
+          Cc = (D30 * D30) / (D10 * D60);
+        }
       }
 
       return { caseName, D10, D30, D60, Cu, Cc };
@@ -217,45 +261,49 @@ function App() {
 
   const handleAddCase = () => {
     const newCaseName = `Case ${cases.length + 1}`;
-    setCases((prev) => [...prev, newCaseName]);
-    setSieveData((prev) => prev.map((row) => ({ ...row, [newCaseName]: '' })));
-    setVisibleCases((prev) => ({ ...prev, [newCaseName]: true }));
+    setCases([...cases, newCaseName]);
+    setSieveData(sieveData.map((row) => ({ ...row, [newCaseName]: '' })));
+    setVisibleCases({ ...visibleCases, [newCaseName]: true });
   };
 
   const handleRemoveCase = () => {
     if (cases.length <= 1) return;
-    const lastCaseName = cases[cases.length - 1];
+    const newCases = [...cases];
+    const lastCaseName = newCases.pop()!;
+    setCases(newCases);
 
-    setCases((prev) => prev.slice(0, -1));
-    setSieveData((prev) =>
-      prev.map((row) => {
-        const next = { ...row };
-        delete next[lastCaseName];
-        return next;
+    setSieveData(
+      sieveData.map((row) => {
+        const newRow = { ...row };
+        delete newRow[lastCaseName];
+        return newRow;
       })
     );
-    setVisibleCases((prev) => {
-      const next = { ...prev };
-      delete next[lastCaseName];
-      return next;
-    });
+
+    const newVisibleCases = { ...visibleCases };
+    delete newVisibleCases[lastCaseName];
+    setVisibleCases(newVisibleCases);
+
+    if (refCase === lastCaseName) {
+      setRefCase(newCases[0] ?? 'Case 1');
+    }
   };
 
   const handleDownloadCsv = () => {
-    const csv1 = Papa.unparse({
-      fields: ['Sieve Size (mm)', ...cases],
-      data: sieveData,
-    });
+    const csvData =
+      Papa.unparse({
+        fields: ['Sieve Size (mm)', ...cases],
+        data: sieveData,
+      }) +
+      '\n\n' +
+      Papa.unparse({
+        fields: ['Case', 'D10', 'D30', 'D60', 'Cu', ...(showCc ? ['Cc'] : [])],
+        data: results.map((r) => {
+          const row = { Case: r.caseName, D10: r.D10, D30: r.D30, D60: r.D60, Cu: r.Cu };
+          return showCc ? { ...row, Cc: r.Cc } : row;
+        }),
+      });
 
-    const csv2 = Papa.unparse({
-      fields: ['Case', 'D10', 'D30', 'D60', 'Cu', ...(showCc ? ['Cc'] : [])],
-      data: results.map((r) => {
-        const row: any = { Case: r.caseName, D10: r.D10, D30: r.D30, D60: r.D60, Cu: r.Cu };
-        return showCc ? { ...row, Cc: r.Cc } : row;
-      }),
-    });
-
-    const csvData = `${csv1}\n\n${csv2}`;
     const blob = new Blob([`\uFEFF${csvData}`], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -263,33 +311,68 @@ function App() {
     link.click();
   };
 
-  // -------- Chart data --------
-  const chartData = useMemo(() => {
-    const rows = sieveData
-      .filter((r) => r.sieveSize > 0)
-      .map((row) => {
-        const out: { sieveSize: number; [key: string]: number | null } = { sieveSize: row.sieveSize };
-        cases.forEach((caseName) => {
-          const s = row[caseName] as string;
-          const v = parseFloat(s);
-          out[caseName] = s && s.trim() !== '' && !Number.isNaN(v) ? Math.max(0, Math.min(100, v)) : null;
-        });
-        return out;
-      })
-      .sort((a, b) => b.sieveSize - a.sieveSize);
-
-    return rows;
-  }, [sieveData, cases]);
-
+  // グラフに描けるケース（2点以上あるものだけ）
   const plottableCases = useMemo(() => {
     return cases.filter((caseName) => {
-      const valid = chartData.filter((r) => typeof r[caseName] === 'number');
-      return valid.length >= 2;
+      const validPoints = sieveData.filter((row) => {
+        const value = parseFloat(row[caseName] as string);
+        return !isNaN(value) && row.sieveSize > 0;
+      });
+      return validPoints.length >= 2;
     });
-  }, [chartData, cases]);
+  }, [sieveData, cases]);
 
-  const xMin = useMemo(() => Math.min(...chartData.map((r) => r.sieveSize)), [chartData]);
-  const xMax = useMemo(() => Math.max(...chartData.map((r) => r.sieveSize)), [chartData]);
+  // Recharts用データ：Xは sieveSize をそのまま使う（scale="log"で対数軸にする）
+  const chartData = useMemo(() => {
+    const processed = sieveData
+      .map((row) => {
+        const newRow: { sieveSize: number; [key: string]: number | null } = {
+          sieveSize: row.sieveSize,
+        };
+        cases.forEach((caseName) => {
+          const valueStr = row[caseName] as string;
+          if (valueStr === null || valueStr.trim() === '' || isNaN(parseFloat(valueStr))) {
+            newRow[caseName] = null;
+          } else {
+            const value = parseFloat(valueStr);
+            newRow[caseName] = Math.max(0, Math.min(100, value));
+          }
+        });
+        return newRow;
+      })
+      .filter((row) => row.sieveSize > 0);
+
+    // 大きい→小さいへ（粒度曲線の並びとして自然）
+    processed.sort((a, b) => b.sieveSize - a.sieveSize);
+    return processed;
+  }, [sieveData, cases]);
+
+  // X軸範囲（対数軸なので 0 は不可）
+  const xDomain = useMemo(() => {
+    const sizes = sieveData.map((r) => r.sieveSize).filter((v) => isFinite(v) && v > 0);
+    if (sizes.length === 0) return [0.01, 100] as [number, number];
+    const min = Math.min(...sizes);
+    const max = Math.max(...sizes);
+    return [min, max] as [number, number];
+  }, [sieveData]);
+
+  // D-lines 用（選択したケースのD10/D30/D60）
+  const refResult = useMemo(() => results.find((r) => r.caseName === refCase), [results, refCase]);
+
+  const refLines = useMemo(() => {
+    const lines: { label: string; x: number }[] = [];
+    if (!refResult) return lines;
+
+    const add = (label: string, v: number | string) => {
+      if (typeof v === 'number' && isFinite(v) && v > 0) lines.push({ label, x: v });
+    };
+
+    add('D10', refResult.D10);
+    add('D30', refResult.D30);
+    add('D60', refResult.D60);
+
+    return lines;
+  }, [refResult]);
 
   return (
     <div className="App">
@@ -302,8 +385,20 @@ function App() {
         <button onClick={handleRemoveCase} disabled={cases.length <= 1}>
           ケース列を削除
         </button>
-        <label style={{ marginLeft: 8 }}>
-          <input type="checkbox" checked={showCc} onChange={() => setShowCc((v) => !v)} /> 曲率係数 (Cc) を表示
+
+        <label style={{ marginLeft: 12 }}>
+          <input type="checkbox" checked={showCc} onChange={() => setShowCc(!showCc)} /> 曲率係数 (Cc) を表示
+        </label>
+
+        <label style={{ marginLeft: 12 }}>
+          D線表示:
+          <select value={refCase} onChange={(e) => setRefCase(e.target.value)} style={{ marginLeft: 8 }}>
+            {cases.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
 
@@ -313,8 +408,8 @@ function App() {
           <thead>
             <tr>
               <th>篩目 (mm)</th>
-              {cases.map((c) => (
-                <th key={c}>{c}</th>
+              {cases.map((caseName) => (
+                <th key={caseName}>{caseName}</th>
               ))}
             </tr>
           </thead>
@@ -366,14 +461,14 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {results.map((r) => (
-                  <tr key={r.caseName}>
-                    <td>{r.caseName}</td>
-                    <td>{typeof r.D10 === 'number' ? r.D10.toFixed(3) : r.D10}</td>
-                    <td>{typeof r.D30 === 'number' ? r.D30.toFixed(3) : r.D30}</td>
-                    <td>{typeof r.D60 === 'number' ? r.D60.toFixed(3) : r.D60}</td>
-                    <td>{typeof r.Cu === 'number' ? r.Cu.toFixed(2) : r.Cu}</td>
-                    {showCc && <td>{typeof r.Cc === 'number' ? r.Cc.toFixed(2) : r.Cc}</td>}
+                {results.map((res) => (
+                  <tr key={res.caseName}>
+                    <td>{res.caseName}</td>
+                    <td>{typeof res.D10 === 'number' ? res.D10.toFixed(3) : res.D10}</td>
+                    <td>{typeof res.D30 === 'number' ? res.D30.toFixed(3) : res.D30}</td>
+                    <td>{typeof res.D60 === 'number' ? res.D60.toFixed(3) : res.D60}</td>
+                    <td>{typeof res.Cu === 'number' ? res.Cu.toFixed(2) : res.Cu}</td>
+                    {showCc && <td>{typeof res.Cc === 'number' ? res.Cc.toFixed(2) : res.Cc}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -388,36 +483,49 @@ function App() {
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" />
 
-            {/* ✅ Xは “実粒径(mm)” のまま + scale="log" が正解 */}
+            {/* ここが重要：scale="log" で「本当の対数軸」にする */}
             <XAxis
               dataKey="sieveSize"
               type="number"
               scale="log"
-              domain={[xMin, xMax]}
+              domain={[xDomain[0], xDomain[1]]}
               reversed={true}
-              ticks={initialSieveSizes}   // 主要篩目をそのまま表示
-              tickFormatter={(v) => String(v)}
               allowDataOverflow={true}
+              tickFormatter={(tick) => formatMm(Number(tick))}
               label={{ value: '粒径 (mm) [対数スケール]', position: 'insideBottom', offset: -15 }}
             />
 
             <YAxis
+              label={{ value: '通過百分率 (%)', angle: -90, position: 'insideLeft' }}
               domain={[0, 100]}
               ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}
-              label={{ value: '通過百分率 (%)', angle: -90, position: 'insideLeft' }}
             />
 
             <Tooltip content={<CustomTooltip />} />
             <Legend onClick={handleLegendClick} />
 
+            {/* D10/D30/D60 縦線（計算後に表示） */}
+            {refLines.map((l) => (
+              <ReferenceLine
+                key={l.label}
+                x={l.x}
+                stroke="#999"
+                strokeDasharray="6 6"
+                label={{ value: `${l.label}=${formatMm(l.x)}mm`, position: 'top', fill: '#555' }}
+              />
+            ))}
+
             {plottableCases.map((caseName) => {
-              const idx = cases.findIndex((c) => c === caseName);
+              const caseIndex = cases.findIndex((c) => c === caseName);
+              const visible = !!visibleCases[caseName];
+
               return (
                 <Line
                   key={caseName}
                   type="monotone"
                   dataKey={caseName}
-                  stroke={visibleCases[caseName] ? chartColors[idx % chartColors.length] : 'transparent'}
+                  stroke={chartColors[caseIndex % chartColors.length]}
+                  strokeOpacity={visible ? 1 : 0}
                   strokeWidth={2}
                   dot={{ r: 3 }}
                   connectNulls={false}
